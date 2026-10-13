@@ -77,18 +77,39 @@ criado por esta própria camada. Por isso: apply com backend local (`backend_ove
 dentro dele. Lock: arquivo `.tflock` ao lado do state (`use_lockfile`) —
 [backend S3](https://developer.hashicorp.com/terraform/language/backend/s3). Decisão em ADR-0011.
 
-## Primeira execução numa conta
+## Como executar
 
-Procedimento manual. Será automatizado em `scripts/bootstrap.sh` quando a camada estiver completa.
-Rodar no **Git Bash**, a partir da raiz do `guetto-infra`.
+No **Git Bash**, a partir da raiz do `guetto-infra`:
 
 ```bash
-# 0. Config da conta (pasta não versionada). <conta> é um apelido local, ex.: lab.
+# Uma vez por conta: config local (pasta não versionada). <conta> é um apelido, ex.: lab.
 cp -r accounts/example accounts/<conta>
-aws sts get-caller-identity --query Account --output text --profile <profile>   # -> account_id
-#    Preencha account_id em account.tfvars e o nome do bucket em backend.hcl.
+#   account.env     -> AWS_PROFILE
+#   account.tfvars  -> account_name (= <conta>), account_id, budget_*
+#   backend.hcl     -> bucket guetto-tfstate-<account_id>-<região>-an
+
+scripts/bootstrap.sh <conta> --plan   # só mostra o plano
+scripts/bootstrap.sh <conta>          # plan -> confirmação -> apply
+```
+
+O script detecta se é a primeira execução (bucket do state inexistente) e, nesse caso, aplica com backend local
+e migra o state para o bucket. Antes de qualquer chamada ao Terraform ele recusa:
+
+| Situação | Por quê |
+|---|---|
+| `account_id` de exemplo, `account_name` diferente da pasta, `backend.hcl` com bucket diferente do esperado | Config copiada e não preenchida (erro real ocorrido no primeiro bootstrap) |
+| Profile inexistente ou de outra conta | Evita aplicar na conta errada (o `allowed_account_ids` é a segunda trava) |
+| `00-bootstrap/terraform.tfstate` local existente com bucket já criado | Execução anterior interrompida entre apply e migração; migrar automaticamente com `-force-copy` poderia sobrescrever um state mais novo no S3 |
+
+`GITHUB_TOKEN` é obtido de `gh auth token` se não estiver definido.
+
+## O que o script faz por baixo (procedimento manual)
+
+Útil para entender o mecanismo ou recuperar uma execução interrompida. Dentro de `00-bootstrap/`:
+
+```bash
 export AWS_PROFILE=<profile>
-cd 00-bootstrap
+export GITHUB_TOKEN=$(gh auth token)
 
 # 1. Primeiro apply com backend LOCAL: o bucket do backend S3 ainda não existe.
 #    *_override.tf é ignorado pelo Git e substitui o bloco backend de versions.tf.
@@ -106,13 +127,8 @@ rm backend_override.tf
 terraform init -migrate-state -backend-config=../accounts/<conta>/backend.hcl
 terraform state list          # deve listar os recursos, agora lidos do S3
 rm -f terraform.tfstate terraform.tfstate.backup bootstrap.tfplan
-```
 
-## Execuções seguintes (conta já inicializada)
-
-```bash
-export AWS_PROFILE=<profile>
-export GITHUB_TOKEN=$(gh auth token)
+# Execuções seguintes (conta já inicializada)
 terraform init -reconfigure -backend-config=../accounts/<conta>/backend.hcl
 terraform plan -var-file=../accounts/<conta>/account.tfvars
 ```

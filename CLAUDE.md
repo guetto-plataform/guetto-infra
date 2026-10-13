@@ -26,7 +26,12 @@ Decisões em `guetto-plataform/.github` → `docs/adr/` (principalmente ADR-0002
 ## Comandos
 
 Interface de operação: **scripts bash em `scripts/`** (sem Makefile — ADR-0011). Seleção de conta via
-`accounts/<conta>/` (profile, account ID, e-mail). Os comandos serão documentados aqui à medida que existirem.
+`accounts/<conta>/` (`account.env` com `AWS_PROFILE`, `account.tfvars`, `backend.hcl`).
+
+| Comando | O que faz |
+|---|---|
+| `scripts/bootstrap.sh <conta> [--plan]` | Aplica `00-bootstrap` (primeira execução: backend local + migração para o S3) |
 
 - No Windows, rodar os scripts **no Git Bash**. O `bash` do PATH do Windows é o do WSL (outro ambiente, outras credenciais).
 - Scripts: `#!/usr/bin/env bash` + `set -euo pipefail`, finais de linha LF (`.gitattributes`), sem avisos do `shellcheck`.
+- Arquivos de `accounts/` são **lidos com `sed`**, nunca com `source` (não executar config; tolerar CRLF).
