@@ -1,0 +1,21 @@
+# Repositório público: state, planos e config por conta NUNCA são versionados.
+
+# State e artefatos locais do Terraform
+*.tfstate
+*.tfstate.*
+*.tflock
+*.tfplan
+.terraform/
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Config por conta (nome do bucket contém o account ID; e-mail de alerta é pessoal).
+# Apenas o exemplo é versionado.
+accounts/*
+!accounts/example/
+
+# .terraform.lock.hcl É versionado de propósito (ADR-0010, item 6).

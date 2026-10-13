@@ -1,0 +1,59 @@
+# Valida o acesso da CI à AWS via OIDC (ADR-0012). Execução manual.
+#
+# Testes:
+#   1. Rodar a partir do main            -> job "com-environment" assume a role e mostra a identidade.
+#   2. Rodar a partir de outro branch    -> o GitHub bloqueia o job (environment só aceita o main).
+#   3. Job "sem-environment" mostra o sub que um job sem environment recebe: ele não casa com a trust policy.
+name: aws-oidc-smoke-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      account:
+        description: Apelido da conta (GitHub Environment aws-<conta>)
+        required: true
+        default: lab
+
+permissions:
+  contents: read
+
+jobs:
+  com-environment:
+    runs-on: ubuntu-latest
+    environment: aws-${{ inputs.account }}
+    permissions:
+      id-token: write # permite pedir o JWT ao GitHub; não dá acesso de escrita a nada
+      contents: read
+    steps:
+      - name: Mostrar as claims do token OIDC (sem o token)
+        run: |
+          token=$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r .value)
+          payload=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
+          while (( ${#payload} % 4 )); do payload+='='; done   # base64url vem sem padding
+          base64 -d <<<"$payload" | jq '{sub, aud, ref, environment}'
+
+      - name: Assumir a role via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true # logs de repositório público são públicos
+
+      - name: Quem sou eu na AWS
+        run: aws sts get-caller-identity
+
+  sem-environment:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Mostrar o sub de um job sem environment
+        run: |
+          token=$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r .value)
+          payload=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
+          while (( ${#payload} % 4 )); do payload+='='; done
+          base64 -d <<<"$payload" | jq '{sub, aud, ref, environment}'
+          echo "A trust policy só aceita ':environment:aws-<conta>' — este sub seria recusado pelo STS."
